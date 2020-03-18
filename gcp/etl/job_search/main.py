@@ -5,7 +5,10 @@ from datetime import date
 from bs4 import BeautifulSoup
 import os
 
-os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = r'/Users/jason/Documents/Jason/JobMatch/job-match-271401-74d3c9eb9112.json'
+gcp_creds_path = '/Users/jason/Documents/Jason/JobMatch/job-match-271401-74d3c9eb9112.json'
+if os.path.exists(gcp_creds_path):
+    os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = r'/Users/jason/Documents/Jason/JobMatch/job-match-271401-74d3c9eb9112.json'
+
 
 job_url_template = 'https://www.indeed.com/jobs?q={title}+%2420%2C000&l={location}&start={length}&sort=date'
 
@@ -14,7 +17,7 @@ job_locations = ['New+York', 'Los+Angeles']
 result_length = 20
 
 
-def url_to_df(job_url):
+def url_to_df(job_url, search_title, search_location):
     soup = BeautifulSoup(urllib.request.urlopen(job_url).read(), 'html.parser')
     results = soup.find_all('div', attrs={'data-tn-component': 'organicJob'})
 
@@ -22,6 +25,8 @@ def url_to_df(job_url):
 
     for x in results:
         input_date = date.today().strftime("%Y%m%d")
+        input_search_title = search_title
+        input_search_location = search_location
         input_company = None
         input_job_title = None
         input_location = None
@@ -52,7 +57,9 @@ def url_to_df(job_url):
             input_job_url = 'https://www.indeed.com/viewjob?jk='+job_id[3:]
 
         job_df = pd.DataFrame(data=[{
-            'scraped_date': input_date,
+            'search_date': input_date,
+            'search_title': input_search_title,
+            'search_location': input_search_location,
             'title': input_job_title,
             'location': input_location,
             'company': input_company,
@@ -65,16 +72,20 @@ def url_to_df(job_url):
     return output_df
 
 
-jobs_df = pd.DataFrame()
-for job_title in job_titles:
-    for job_location in job_locations:
-        job_url = job_url_template.format(
-            title=job_title, location=job_location, length=result_length)
-        df = url_to_df(job_url)
-        jobs_df = jobs_df.append(df, ignore_index=True)
+def search_jobs():
+    jobs_df = pd.DataFrame()
+    for job_title in job_titles:
+        for job_location in job_locations:
+            job_url = job_url_template.format(
+                title=job_title, location=job_location, length=result_length)
+            df = url_to_df(job_url, job_title, job_location)
+            jobs_df = jobs_df.append(df, ignore_index=True)
+
+    date_marker = str(date.today().strftime("%Y%m%d"))
+
+    pd_gbq.to_gbq(jobs_df, 'job_search.job_search' +
+                  date_marker, if_exists='replace')
+    return print('Jobs Searched')
 
 
-date_marker = str(date.today().strftime("%Y%m%d"))
-
-pd_gbq.to_gbq(jobs_df, 'job_search.job_search' +
-              date_marker, if_exists='replace')
+search_jobs()
