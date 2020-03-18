@@ -1,8 +1,13 @@
-# Project title and description
+# Job Match Project
 
-Include a project description that explains **what** your project is and **why** it exists. Aim for no more than 3-5 concise sentences. For example, you might say:
+The Job Match Project aims to serve two purpose:
+1. Help individuals in the job application process through data science
+2. Become a introduction to data science project
 
-{Project Name} is a project of Hack for LA. Hack for LA is a brigade of a Code for America that exists to {your mission}. {Project Name} helps {target users} accomplish {goal of project}. The {app/site/thing you're building}'s main features include {very brief feature descriptions}.
+Job Match is a project of Hack for LA.  The Job Match Project aims to serve two purpose:
+1. Help individuals in the job application process through data science
+2. Become a introduction to data science project
+
 
 ### Project context
 
@@ -10,8 +15,8 @@ Civic projects often exist within a larger context that may include multiple sta
 
 ### Technology used
 
-- Each platform or framework should get its own bullet.
-- Each platform should include an [active link](#) to the official documentation.
+- Python (pandas, beautifulsoup)
+- ElasticSearch, Lambda Functions
 
 
 
