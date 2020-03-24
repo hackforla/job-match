@@ -1,7 +1,8 @@
+import json
 import pandas as pd
 import pandas_gbq as pd_gbq
 import urllib.request
-from datetime import date
+from datetime import datetime
 from bs4 import BeautifulSoup
 import os
 
@@ -11,22 +12,35 @@ if os.path.exists(gcp_creds_path):
 
 print('here we go')
 
-job_url_template = 'https://www.indeed.com/jobs?q={title}+%2420%2C000&l={location}&start={length}&sort=date'
+# x = '''
+# { "titles":"'data+scientist', 'product+manager', 'data+analyst', 'full+stack+developer'",
+# "locations":"'New+York', 'Chicago', 'San+Francisco', 'Austin', 'Seattle'"}
+# '''
+# test_request = json.loads(x)
 
-job_titles = ['data+scientist', 'product+manager', 'data+analyst', 'full+stack+developer', 'frontend+developer', 'backend+developer', 'senior+developer',
-              'ux+designer', 'ad+operations', 'human+resource', 'people+operations', 'technical+recruiter']
-job_locations = ['New+York', 'Chicago', 'San+Francisco', 'Austin', 'Seattle',
-                 'Los+Angeles', 'Philadelphia', 'Atlanta', 'Dallas', 'Pittsburgh',
-                 'Portland', 'Phoenix', 'Denver', 'Houston', 'Miami',
-                 'Charlottesville', 'Richmond', 'Baltimore', 'Harrisonburg', 'San+Antonio', 'San+Diego', 'San+Jose'
-                 'Austin', 'Jacksonville', 'Indianapolis', 'Columbus', 'Fort+Worth', 'Charlotte', 'Detroit', 'El+Paso',
-                 'Memphis', 'Boston', 'Nashville', 'Louisville', 'Milwaukee', 'Las+Vegas', 'Albuquerque', 'Tucson',
-                 'Fresno', 'Sacramento', 'Long+Beach', 'Mesa', 'Virginia+Beach', 'Norfolk', 'Atlanta', 'Colorado+Springs',
-                 'Raleigh', 'Omaha', 'Oakland', 'Tulsa', 'Minneapolis', 'Cleveland', 'Wichita', 'Arlington', 'New+Orleans',
-                 'Bakersfield', 'Tampa', 'Honolulu', 'Anaheim', 'Aurora', 'Santa+Ana', 'Riverside', 'Corpus+Christi', 'Pittsburgh',
-                 'Lexington', 'Anchorage', 'Cincinnati', 'Baton+Rouge', 'Chesapeake', 'Alexandria', 'Fairfax', 'Herndon',
-                 'Reston', 'Roanoke']
-result_length = 10
+
+def string_to_array(input_string):
+    input_string = input_string.replace("'", "")
+    input_string = input_string.replace(" ", "")
+    array = input_string.split(',')
+    return array
+
+
+def search_request(request):
+    try:
+        request_json = request.get_json()
+    except:
+        request_json = request
+        print('not like this')  # return f'Error 1!'
+    titles = []
+    locations = []
+    if request_json and 'titles' in request_json and 'locations' in request_json:
+        titles = request_json['titles']
+        locations = request_json['locations']
+        print('We have job titles and locations')
+    titles_array = string_to_array(titles)
+    locations_array = string_to_array(locations)
+    return titles_array, locations_array
 
 
 def url_to_df(job_url, search_title, search_location):
@@ -36,7 +50,7 @@ def url_to_df(job_url, search_title, search_location):
     output_df = pd.DataFrame()
 
     for x in results:
-        input_date = date.today().strftime("%Y%m%d")
+        input_datetime = datetime.today().strftime("%Y%m%d %H:%M")
         input_search_title = search_title
         input_search_location = search_location
         input_company = None
@@ -69,7 +83,7 @@ def url_to_df(job_url, search_title, search_location):
             # input_job_url = 'https://www.indeed.com/viewjob?jk='+job_id[3:]
 
         job_df = pd.DataFrame(data=[{
-            'search_date': input_date,
+            'search_datetime': input_datetime,
             'search_title': input_search_title,
             'search_location': input_search_location,
             'title': input_job_title,
@@ -77,31 +91,38 @@ def url_to_df(job_url, search_title, search_location):
             'company': input_company,
             'job_id': input_job_id,
         }])
-
         output_df = output_df.append(job_df, ignore_index=True)
+
+    output_df.search_datetime = pd.to_datetime(
+        output_df.search_datetime, format="%Y%m%d %H:%M")
     return output_df
 
 
-def search_jobs():
+def search_jobs(incoming_request):
+    job_titles, job_locations = search_request(incoming_request)
+    job_url_template = 'https://www.indeed.com/jobs?q={title}+%2420%2C000&l={location}&start=10&sort=date'
     jobs_df = pd.DataFrame()
     i = 0
     for job_title in job_titles:
         for job_location in job_locations:
             job_url = job_url_template.format(
-                title=job_title, location=job_location, length=result_length)
+                title=job_title, location=job_location)
             df = url_to_df(job_url, job_title, job_location)
             jobs_df = jobs_df.append(df, ignore_index=True)
             i += 1
             if i % 10 == 0:
-                results_scaled = i*result_length
+                results_scaled = i*10
                 print('Processed {num_results} number of results.'.format(
                     num_results=results_scaled))
 
-    date_marker = str(date.today().strftime("%Y%m%d"))
+    date_marker = str(datetime.today().strftime("%Y%m%d"))
 
-    pd_gbq.to_gbq(jobs_df, 'job_search.job_search' +
-                  date_marker, if_exists='replace')
+    pd.io.gbq.to_gbq(jobs_df, 'job_search.job_search_' +
+                     date_marker, if_exists='replace')
+
+    # pd_gbq.to_gbq(jobs_df, 'job_search.job_search_' +
+    #               date_marker, if_exists='replace')
     return print('Jobs Searched')
 
 
-search_jobs()
+# search_jobs(test_request)
