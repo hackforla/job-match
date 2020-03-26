@@ -1,22 +1,22 @@
-import json
+# import json
 import pandas as pd
-import pandas_gbq as pd_gbq
+# import pandas_gbq as pd_gbq
 import urllib.request
 from datetime import datetime
 from bs4 import BeautifulSoup
 import os
 
-gcp_creds_path = '/Users/jason/Documents/Jason/JobMatch/job-match-271401-74d3c9eb9112.json'
-if os.path.exists(gcp_creds_path):
-    os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = r'/Users/jason/Documents/Jason/JobMatch/job-match-271401-74d3c9eb9112.json'
+# gcp_creds_path = '/Users/jason/Documents/Jason/JobMatch/job-match-271401-74d3c9eb9112.json'
+# if os.path.exists(gcp_creds_path):
+#     os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = r'/Users/jason/Documents/Jason/JobMatch/job-match-271401-74d3c9eb9112.json'
 
 print('here we go')
 
-x = '''
-{ "titles":"'data+scientist', 'product+manager', 'data+analyst', 'full+stack+developer'",
-"locations":"'New+York', 'Chicago', 'San+Francisco', 'Austin', 'Seattle'"}
-'''
-test_request = json.loads(x)
+# x = '''
+# { "titles":"'data+scientist', 'product+manager', 'data+analyst', 'full+stack+developer'",
+# "locations":"'New+York', 'Chicago', 'San+Francisco', 'Austin', 'Seattle'"}
+# '''
+# test_request = json.loads(x)
 
 
 def string_to_array(input_string):
@@ -28,10 +28,11 @@ def string_to_array(input_string):
 
 def search_request(request):
     try:
-        request_json = request.get_json()
+        request_json = request.get_json(force=True)
+        print(request_json)
     except:
-        request_json = request
-        print('not like this')  # return f'Error 1!'
+        print('not like this')
+        return f'Error 1!'
     titles = []
     locations = []
     if request_json and 'titles' in request_json and 'locations' in request_json:
@@ -93,6 +94,9 @@ def url_to_df(job_url, search_title, search_location):
         }])
         output_df = output_df.append(job_df, ignore_index=True)
 
+    if 'search_datetime' in output_df.columns:  # return empty dataframe if no results from search
+        return pd.DataFrame()
+
     output_df.search_datetime = pd.to_datetime(
         output_df.search_datetime, format="%Y%m%d %H:%M")
     return output_df
@@ -110,16 +114,16 @@ def search_jobs(incoming_request):
             df = url_to_df(job_url, job_title, job_location)
             jobs_df = jobs_df.append(df, ignore_index=True)
             i += 1
-            if i % 10 == 0:
-                results_scaled = i*10
+            if i % 50 == 0:
+                results_scaled = i*50
                 print('Processed {num_results} number of results.'.format(
                     num_results=results_scaled))
     date_marker = str(datetime.today().strftime("%Y%m%d"))
     pd.io.gbq.to_gbq(jobs_df, 'job_search.job_search_' +
-                     date_marker,  'job-match-271401', if_exists='replace')
+                     date_marker,  'job-match-271401', if_exists='append')
     # pd_gbq.to_gbq(jobs_df, 'job_search.job_search_' +
     #               date_marker, if_exists='replace')
     return print('Jobs Searched')
 
 
-search_jobs(test_request)
+# search_jobs(test_request)
