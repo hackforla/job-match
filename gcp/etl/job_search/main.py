@@ -12,11 +12,11 @@ if os.path.exists(gcp_creds_path):
 
 print('here we go')
 
-# x = '''
-# { "titles":"'data+scientist', 'product+manager', 'data+analyst', 'full+stack+developer'",
-# "locations":"'New+York', 'Chicago', 'San+Francisco', 'Austin', 'Seattle'"}
-# '''
-# test_request = json.loads(x)
+x = '''
+{ "titles":"'data+scientist', 'product+manager', 'data+analyst', 'full+stack+developer'",
+"locations":"'New+York', 'Chicago', 'San+Francisco', 'Austin', 'Seattle'"}
+'''
+test_request = json.loads(x)
 
 
 def string_to_array(input_string):
@@ -114,15 +114,12 @@ def search_jobs(incoming_request):
                 results_scaled = i*10
                 print('Processed {num_results} number of results.'.format(
                     num_results=results_scaled))
-
     date_marker = str(datetime.today().strftime("%Y%m%d"))
-
     pd.io.gbq.to_gbq(jobs_df, 'job_search.job_search_' +
-                     date_marker, if_exists='replace')
-
+                     date_marker,  'job-match-271401', if_exists='replace')
     # pd_gbq.to_gbq(jobs_df, 'job_search.job_search_' +
     #               date_marker, if_exists='replace')
     return print('Jobs Searched')
 
 
-# search_jobs(test_request)
+search_jobs(test_request)
