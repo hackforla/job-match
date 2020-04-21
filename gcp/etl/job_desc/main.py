@@ -1,4 +1,8 @@
-import multiprocessing
+# https://www.confessionsofadataguy.com/web-scraping-sentiment-spark-streaming-postgres-dooms-day-clock-part-1/
+# https://compiletoi.net/fast-scraping-in-python-with-asyncio/
+import asyncio
+from aiohttp import ClientSession
+
 import pandas as pd
 import urllib.request
 from datetime import datetime
@@ -12,25 +16,55 @@ if os.path.exists(gcp_creds_path):
 
 def retrieve_job_id():
     query_string = """
-    select *, ABS(MOD(FARM_FINGERPRINT(job_id), 10)) part
+    select job_id, new_search_datetime as search_datetime,
+        title, location, company, search_title, search_location
     from job_search.job_id_new_list
     """
     df = pd.read_gbq(query=query_string, progress_bar_type=None)
     return df
 
 
-def job_details(job_id, title, location, company):
+### Async Web Scraping ###
+
+# Set the number of concurrent requests to limit hits to Indeed webserver
+sema = asyncio.BoundedSemaphore(10)
+
+
+async def fetch(url, session):
+    async with sema, session.get(url) as response:
+        return await response.read()
+
+
+async def run_urls(job_id_list):
+    tasks = []
+
+    async with ClientSession() as session:
+        for job_id in job_id_list:
+            job_url = 'https://www.indeed.com/viewjob?jk='+job_id
+            task = asyncio.ensure_future(fetch(job_url, session))
+            tasks.append(task)
+        responses = await asyncio.gather(*tasks)
+        return responses
+
+# Responses to BeautifulSoup
+
+
+def job_details(response):
     input_datetime = datetime.today().strftime("%Y%m%d %H:%M")
-    job_desc_url = 'https://www.indeed.com/viewjob?jk='+job_id
-    soup = BeautifulSoup(urllib.request.urlopen(
-        job_desc_url).read(), 'html.parser')
+    soup = BeautifulSoup(response, 'html.parser')
+
+    try:  # Finds job_id from response through meta tag
+        job_id = soup.find('meta', attrs={'id': 'indeed-share-url'})
+        job_id = job_id['content'].split('=')[-1]
+    except:
+        job_id = None
 
     try:
         job_title = soup.find(
             'div', attrs={"class": "jobsearch-JobInfoHeader-title-container"})
         job_title = job_title.text.strip()
     except:
-        job_title = title
+        job_title = None
 
     try:
         job_desc = soup.find(
@@ -43,7 +77,7 @@ def job_details(job_id, title, location, company):
             'a', attrs={"class": "jobsearch-CompanyAvatar-companyLink"})
         company_name = company_name.text.strip()
     except:
-        company_name = company
+        company_name = None
 
     try:
         company_rating = soup.find('meta', attrs={'itemprop': 'ratingValue'})
@@ -61,10 +95,9 @@ def job_details(job_id, title, location, company):
     df_job_details = pd.DataFrame(data=[{
         'search_detail_datetime': input_datetime,
         'job_id': job_id,
-        'title': job_title,
+        'desc_title': job_title,
         'job_desc': job_desc,
-        'location': location,
-        'company': company_name,
+        'desc_company': company_name,
         'company_rating': company_rating,
         'company_rating_count': company_rating_count,
 
@@ -78,33 +111,31 @@ def df_to_bq(input_df):
         input_df.search_detail_datetime, format="%Y%m%d %H:%M")
     input_df.company_rating = input_df.company_rating.astype(float)
     input_df.company_rating_count = input_df.company_rating_count.astype(int)
-    pd.io.gbq.to_gbq(input_df, 'job_search.job_details',
-                     'job-match-271401', if_exists='append', progress_bar=False)
+    pd.io.gbq.to_gbq(input_df, 'job_search.temp_job_details',
+                     'job-match-271401', if_exists='replace', progress_bar=False)
     return
 
 
-def search_job_desc(input_df):
-    df = input_df.reset_index(drop=True)
+def responses_to_df(responses):
     df_job_details = pd.DataFrame()
-    process_id = df.job_id.iloc[0]
-    print('Starting Parallel Process ' + str(process_id))
-    for index, row in df.iterrows():
-        row_job_details = job_details(row['job_id'], row['title'],
-                                      row['location'], row['company'])
+    for response in responses:
+        row_job_details = job_details(response)
         df_job_details = df_job_details.append(
             row_job_details, ignore_index=True)
-        if (index+1) % 100 == 0:
-            print(
-                process_id + ' -- Uploading to BigQuery. Job Desc Count at = ' + str(index+1))
-            df_to_bq(df_job_details)
-            df_job_details = pd.DataFrame()
-    df_to_bq(df_job_details)
-    return print('job done!')
+    return df_job_details
 
 
 if __name__ == '__main__':
-    df = retrieve_job_id()
-    pool = multiprocessing.Pool(processes=6)
-    inputs = [df[df.part == 0], df[df.part == 1],
-              df[df.part == 2], df[df.part == 3], df[df.part == 4], df[df.part == 5], df[df.part == 6], df[df.part == 7], df[df.part == 8], df[df.part == 9]]
-    outputs = pool.map(search_job_desc, inputs)
+    df_job_search = retrieve_job_id()  # get job_ids
+    loop = asyncio.get_event_loop()
+    future = asyncio.ensure_future(run_urls(df_job_search.job_id.to_list()))
+    responses = loop.run_until_complete(future)
+    df_job_details = responses_to_df(responses)
+    df_combined = pd.merge(df_job_search, df_job_details,
+                           how='inner', left_on='job_id', right_on='job_id')
+    df_combined.desc_title.fillna(df_combined.title, inplace=True)
+    df_combined.desc_company.fillna(df_combined.company, inplace=True)
+    df_combined.drop(columns=['title', 'company'], inplace=True)
+    df_combined.rename(
+        columns={"desc_title": "title", "desc_company": "company"}, inplace=True)
+    df_to_bq(df_combined)
