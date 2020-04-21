@@ -1,13 +1,13 @@
-# https://www.confessionsofadataguy.com/web-scraping-sentiment-spark-streaming-postgres-dooms-day-clock-part-1/
-# https://compiletoi.net/fast-scraping-in-python-with-asyncio/
-import asyncio
-from aiohttp import ClientSession
-
 import pandas as pd
 import urllib.request
 from datetime import datetime
 from bs4 import BeautifulSoup
 import os
+
+# https://www.confessionsofadataguy.com/web-scraping-sentiment-spark-streaming-postgres-dooms-day-clock-part-1/
+# https://compiletoi.net/fast-scraping-in-python-with-asyncio/
+import asyncio
+from aiohttp import ClientSession
 
 gcp_creds_path = '/Users/jason/Documents/Jason/JobMatch/job-match-271401-74d3c9eb9112.json'
 if os.path.exists(gcp_creds_path):
@@ -111,8 +111,8 @@ def df_to_bq(input_df):
         input_df.search_detail_datetime, format="%Y%m%d %H:%M")
     input_df.company_rating = input_df.company_rating.astype(float)
     input_df.company_rating_count = input_df.company_rating_count.astype(int)
-    pd.io.gbq.to_gbq(input_df, 'job_search.temp_job_details',
-                     'job-match-271401', if_exists='replace', progress_bar=False)
+    pd.io.gbq.to_gbq(input_df, 'job_search.job_details',
+                     'job-match-271401', if_exists='append', progress_bar=False)
     return
 
 
@@ -125,17 +125,26 @@ def responses_to_df(responses):
     return df_job_details
 
 
+def divide_list(input_list, n):
+    for i in range(0, len(input_list), n):
+        yield input_list[i:i+n]
+
+
 if __name__ == '__main__':
     df_job_search = retrieve_job_id()  # get job_ids
     loop = asyncio.get_event_loop()
     future = asyncio.ensure_future(run_urls(df_job_search.job_id.to_list()))
     responses = loop.run_until_complete(future)
-    df_job_details = responses_to_df(responses)
-    df_combined = pd.merge(df_job_search, df_job_details,
-                           how='inner', left_on='job_id', right_on='job_id')
-    df_combined.desc_title.fillna(df_combined.title, inplace=True)
-    df_combined.desc_company.fillna(df_combined.company, inplace=True)
-    df_combined.drop(columns=['title', 'company'], inplace=True)
-    df_combined.rename(
-        columns={"desc_title": "title", "desc_company": "company"}, inplace=True)
-    df_to_bq(df_combined)
+    # Split into batch sizes of 300
+    list_of_responses = list(divide_list(responses, 300))
+    for i, i_response in enumerate(list_of_responses):
+        df_job_details = responses_to_df(i_response)
+        df_combined = pd.merge(df_job_search, df_job_details,
+                               how='inner', left_on='job_id', right_on='job_id')
+        df_combined.desc_title.fillna(df_combined.title, inplace=True)
+        df_combined.desc_company.fillna(df_combined.company, inplace=True)
+        df_combined.drop(columns=['title', 'company'], inplace=True)
+        df_combined.rename(
+            columns={"desc_title": "title", "desc_company": "company"}, inplace=True)
+        df_to_bq(df_combined)
+        print('Processed and Uploaded: ' + str((i+1)*300) + ' Job Descriptions')
