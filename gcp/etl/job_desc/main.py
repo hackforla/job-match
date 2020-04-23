@@ -130,13 +130,14 @@ def divide_list(input_list, n):
         yield input_list[i:i+n]
 
 
-if __name__ == '__main__':
+def job_desc(request):
+    request = 'not used'
     df_job_search = retrieve_job_id()  # get job_ids
     loop = asyncio.get_event_loop()
     future = asyncio.ensure_future(run_urls(df_job_search.job_id.to_list()))
     responses = loop.run_until_complete(future)
-    # Split into batch sizes of 300
-    list_of_responses = list(divide_list(responses, 300))
+    # Split into batch sizes of 400
+    list_of_responses = list(divide_list(responses, 400))
     for i, i_response in enumerate(list_of_responses):
         df_job_details = responses_to_df(i_response)
         df_combined = pd.merge(df_job_search, df_job_details,
@@ -147,4 +148,5 @@ if __name__ == '__main__':
         df_combined.rename(
             columns={"desc_title": "title", "desc_company": "company"}, inplace=True)
         df_to_bq(df_combined)
-        print('Processed and Uploaded: ' + str((i+1)*300) + ' Job Descriptions')
+        print('Processed and Uploaded: ' + str((i+1)*400) + ' Job Descriptions')
+    return
