@@ -1,3 +1,7 @@
+# Note
+- Project taken up by Data Science CoP
+  - https://github.com/hackforla/data-science/issues/209
+
 # Job Match Project
 
 The Job Match Project aims to serve two purpose:
